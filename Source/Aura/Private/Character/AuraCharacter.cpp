@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "NiagaraComponent.h"
 #include "AbilitySystem/AuraAbilitySystemComponent.h"
+#include "AbilitySystem/AuraAttributeSet.h"
 #include "Camera/CameraComponent.h"
 #include "Data/LevelUpInfo.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -179,10 +180,25 @@ void AAuraCharacter::InitAbilityActorInfo()
 	Cast<UAuraAbilitySystemComponent>(AuraPlayerState->GetAbilitySystemComponent())->AbilityActorInfoSet();
 	AbilitySystemComponent = AuraPlayerState->GetAbilitySystemComponent();
 	AttributeSet = AuraPlayerState->GetAttributeSet();
-	
+
+	// Default GameplayEffects belong to the server and the PlayerState ASC.
+	if (HasAuthority())
+	{
+		const UAuraAttributeSet* AuraAS = Cast<UAuraAttributeSet>(AttributeSet);
+		const bool bDefaultAttributesAlreadyInitialized = AuraAS &&
+			AuraAS->GetMaxHealth() > 0.f &&
+			AuraAS->GetMaxMana() > 0.f;
+
+		// PlayerState keeps its ASC across pawn replacement, so do not apply defaults twice.
+		if (!bDefaultAttributesAlreadyInitialized)
+		{
+			InitializeDefaultAttributes();
+		}
+	}
+
 	BindMovementStatusTags();
 	RefreshMovementSpeed();
-	
+
 	if (AAuraPlayerController* AuraPlayerController = Cast<AAuraPlayerController>(GetController()))
 	{
 		if (AAuraHUD* AuraHUD = Cast<AAuraHUD>(AuraPlayerController->GetHUD()))
@@ -190,7 +206,6 @@ void AAuraCharacter::InitAbilityActorInfo()
 			AuraHUD->InitOverlay(AuraPlayerController, AuraPlayerState, AbilitySystemComponent, AttributeSet);
 		}
 	}
-	InitializeDefaultAttributes();
 }
 
 

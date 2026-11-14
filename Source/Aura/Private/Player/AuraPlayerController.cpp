@@ -74,16 +74,25 @@ void AAuraPlayerController::StartMagicDrawingMode()
 		return;
 	}
 
-	if (!MagicDrawingWidget)
+	if (!IsValid(MagicDrawingWidget))
 	{
-		MagicDrawingWidget = CreateWidget<UAuraMagicDrawingWidget>(this,MagicDrawingWidgetClass);
+		MagicDrawingWidget = CreateWidget<UAuraMagicDrawingWidget>(
+			this,
+			MagicDrawingWidgetClass
+		);
 
-		if (MagicDrawingWidget)
+		if (!IsValid(MagicDrawingWidget))
 		{
-			MagicDrawingWidget->SetIsFocusable(false);
-			MagicDrawingWidget->AddToViewport();
-			MagicDrawingWidget->InitializeDrawing(GetMagicComponent());
+			UE_LOG(
+				LogTemp,
+				Error,
+				TEXT("Failed to create MagicDrawingWidget.")
+			);
+			MagicComponent->CancelMagic();
+			return;
 		}
+
+		MagicDrawingWidget->SetIsFocusable(false);
 	}
 
 	MagicDrawingWidget->InitializeDrawing(MagicComponent);
@@ -576,6 +585,18 @@ void AAuraPlayerController::ServerConfirmMagicSelfCast_Implementation(FName Patt
 
 void AAuraPlayerController::ServerConfirmMagicTarget_Implementation(FName PatternId, EMagicElement Element, FVector TargetLocation, FMagicGestureNetData GestureData)
 {
+	if (!FMath::IsFinite(TargetLocation.X) ||
+		!FMath::IsFinite(TargetLocation.Y) ||
+		!FMath::IsFinite(TargetLocation.Z))
+	{
+		AuraMagicDebugPrint(
+			TEXT("SERVER REJECT: Target location contains a non-finite coordinate."),
+			FColor::Red
+		);
+		ClientMagicTargetRejected();
+		return;
+	}
+
 	AuraMagicDebugPrint(
 	FString::Printf(
 		TEXT("SERVER: Cast request Pattern=%s Element=%d Location=(%.0f, %.0f, %.0f)"),

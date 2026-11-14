@@ -137,8 +137,8 @@ void FAuraGameplayTags::InitializeNativeGameplayTags()
 		FString("Extends knockback distance")
 		);
 	GameplayTags.Attributes_Secondary_Knockup = UGameplayTagsManager::Get().AddNativeGameplayTag(
-		FName("Attributes.Secondary.Knockup"), 
-		FString("Extends knockback distance")
+		FName("Attributes.Secondary.Knockup"),
+		FString("Increases knockup strength")
 		);
 	GameplayTags.Attributes_Secondary_Stun = UGameplayTagsManager::Get().AddNativeGameplayTag(
 		FName("Attributes.Secondary.Stun"), 

@@ -153,6 +153,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Knockback, Category = "Secondary Attributes")
 	FGameplayAttributeData Knockback;
 	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, Knockback);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Knockup, Category = "Secondary Attributes")
+	FGameplayAttributeData Knockup;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, Knockup);
 	
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Stun, Category = "Secondary Attributes")
 	FGameplayAttributeData Stun;
@@ -278,6 +282,9 @@ public:
             	
 	UFUNCTION()
 	void OnRep_Knockback(const FGameplayAttributeData& OldKnockback) const;
+
+	UFUNCTION()
+	void OnRep_Knockup(const FGameplayAttributeData& OldKnockup) const;
 	
 	UFUNCTION()
 	void OnRep_Stun(const FGameplayAttributeData& OldStun) const;

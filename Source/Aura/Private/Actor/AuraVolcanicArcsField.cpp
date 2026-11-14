@@ -45,7 +45,7 @@ void AAuraVolcanicArcsField::InitializeField(
 	
 	ArcLengthScale = InArcLengthScale;
 	ArcBowOffsetCm = FMath::Max(InArcBowOffsetCm, 0.f);
-	InArcWidthCm = FMath::Max(InArcWidthCm, 1.f);
+	ArcWidthCm = FMath::Max(InArcWidthCm, 1.f);
 	
 	IntersectionLocal = InIntersectionLocal;
 	IntersectionRadiusCm = FMath::Max(InIntersectionRadiusCm, 1.f);
@@ -166,22 +166,80 @@ void AAuraVolcanicArcsField::BuildCollisionForPath(const TArray<FVector>& Path)
 		return;
 	}
 
-	for (int32 Index = 0; Index < Path.Num() - 1; ++Index)
-	{
-		const FVector Start = Path[Index];
-		const FVector End = Path[Index + 1];
+	const int32 SourceSegmentCount = Path.Num() - 1;
+	const int32 DesiredSegmentCount = FMath::Clamp(
+		CollisionSegmentsPerArc,
+		1,
+		SourceSegmentCount
+	);
 
+	TArray<float> CumulativeDistances;
+	CumulativeDistances.Reserve(Path.Num());
+	CumulativeDistances.Add(0.f);
+
+	for (int32 PointIndex = 1; PointIndex < Path.Num(); ++PointIndex)
+	{
+		const float SegmentLength = FVector::Distance(
+			Path[PointIndex - 1],
+			Path[PointIndex]
+		);
+
+		CumulativeDistances.Add(CumulativeDistances.Last() + SegmentLength);
+	}
+
+	const float TotalPathLength = CumulativeDistances.Last();
+	if (TotalPathLength <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	// Resample the existing curve by distance, keeping collision density even.
+	TArray<FVector> CollisionPoints;
+	CollisionPoints.Reserve(DesiredSegmentCount + 1);
+
+	for (int32 SampleIndex = 0; SampleIndex <= DesiredSegmentCount; ++SampleIndex)
+	{
+		const float TargetDistance = TotalPathLength *
+			static_cast<float>(SampleIndex) /
+			static_cast<float>(DesiredSegmentCount);
+
+		int32 SourceIndex = 0;
+		while (SourceIndex < SourceSegmentCount - 1 &&
+			CumulativeDistances[SourceIndex + 1] < TargetDistance)
+		{
+			++SourceIndex;
+		}
+
+		const float SourceSegmentLength =
+			CumulativeDistances[SourceIndex + 1] -
+			CumulativeDistances[SourceIndex];
+
+		const float Alpha = SourceSegmentLength > KINDA_SMALL_NUMBER
+			? (TargetDistance - CumulativeDistances[SourceIndex]) / SourceSegmentLength
+			: 0.f;
+
+		CollisionPoints.Add(FMath::Lerp(
+			Path[SourceIndex],
+			Path[SourceIndex + 1],
+			Alpha
+		));
+	}
+
+	const float CollisionRadiusCm = ArcWidthCm * 0.5f;
+
+	for (int32 Index = 0; Index < CollisionPoints.Num() - 1; ++Index)
+	{
+		const FVector Start = CollisionPoints[Index];
+		const FVector End = CollisionPoints[Index + 1];
 		const FVector Segment = End - Start;
 		const float SegmentLength = Segment.Size();
-		const float CollisionRadiusCm = ArcWidthCm * 0.5f;
-		
+
 		if (SegmentLength <= KINDA_SMALL_NUMBER)
 		{
 			continue;
 		}
 
 		UCapsuleComponent* Capsule = NewObject<UCapsuleComponent>(this);
-
 		if (!IsValid(Capsule))
 		{
 			continue;
@@ -189,21 +247,31 @@ void AAuraVolcanicArcsField::BuildCollisionForPath(const TArray<FVector>& Path)
 
 		Capsule->SetMobility(EComponentMobility::Movable);
 		Capsule->SetupAttachment(GetRootComponent());
-		Capsule->SetCapsuleSize(CollisionRadiusCm,SegmentLength * 0.5f + CollisionRadiusCm);
+		Capsule->SetCapsuleSize(
+			CollisionRadiusCm,
+			SegmentLength * 0.5f + CollisionRadiusCm
+		);
 		Capsule->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		Capsule->SetCollisionObjectType(ECC_WorldDynamic);
 		Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
 		Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 		Capsule->SetGenerateOverlapEvents(true);
-		Capsule->OnComponentBeginOverlap.AddDynamic(this,&AAuraVolcanicArcsField::OnArcBeginOverlap);
-		Capsule->SetRelativeLocation((Start + End) * 0.5f);
+		Capsule->OnComponentBeginOverlap.AddDynamic(
+			this,
+			&AAuraVolcanicArcsField::OnArcBeginOverlap
+		);
 
 		const FVector Direction = Segment.GetSafeNormal();
-		const FQuat Rotation = FQuat::FindBetweenNormals(FVector::UpVector,Direction);
+		const FQuat Rotation = FQuat::FindBetweenNormals(
+			FVector::UpVector,
+			Direction
+		);
 
-		const FVector CollisionCenter = (Start + End) * 0.5f + FVector(0.f, 0.f, 90.f);
+		const FVector CollisionCenter =
+			(Start + End) * 0.5f + FVector(0.f, 0.f, 90.f);
 
 		Capsule->SetRelativeLocation(CollisionCenter);
+		Capsule->SetRelativeRotation(Rotation);
 
 		AddInstanceComponent(Capsule);
 		Capsule->RegisterComponent();
@@ -224,19 +292,8 @@ void AAuraVolcanicArcsField::BuildCollision()
 	BuildCollisionForPath(ArcA);
 	BuildCollisionForPath(ArcB);
 
-	AuraMagicDebugPrint(
-	   FString::Printf(
-		   TEXT("VOLCANIC FIELD: Authority=%d Capsules=%d DamageEffect=%s"),
-		   HasAuthority() ? 1 : 0,
-		   ArcCollisionCapsules.Num(),
-		   *GetNameSafe(DamageEffectClass.Get())
-	   ),
-	   FColor::Cyan,
-	   5.f
-   );
-	
-	// Process actors already overlapping when the field appears.
-	int32 InitialOverlapCount = 0;
+	// Process each actor only once, even when several capsules overlap it.
+	TSet<AActor*> InitialOverlapActors;
 
 	for (UCapsuleComponent* Capsule : ArcCollisionCapsules)
 	{
@@ -248,46 +305,34 @@ void AAuraVolcanicArcsField::BuildCollision()
 		Capsule->UpdateOverlaps();
 
 		TArray<AActor*> OverlappingActors;
-
 		Capsule->GetOverlappingActors(OverlappingActors);
-
-		InitialOverlapCount += OverlappingActors.Num();
 
 		for (AActor* Actor : OverlappingActors)
 		{
-			AuraMagicDebugPrint(
-				FString::Printf(
-					TEXT("VOLCANIC FIELD: Initial candidate=%s"),
-					*GetNameSafe(Actor)
-				),
-				FColor::Yellow
-			);
+			if (!IsValid(Actor) || InitialOverlapActors.Contains(Actor))
+			{
+				continue;
+			}
 
+			InitialOverlapActors.Add(Actor);
 			ApplyDamageToActor(Actor);
 		}
 	}
 
+	// Keep one concise prompt per field instead of logging every capsule overlap.
 	AuraMagicDebugPrint(
 		FString::Printf(
-			TEXT("VOLCANIC FIELD: Initial overlap candidates=%d"),
-			InitialOverlapCount
+			TEXT("VOLCANIC FIELD ACTIVE | Capsules=%d | Initial overlap actors=%d"),
+			ArcCollisionCapsules.Num(),
+			InitialOverlapActors.Num()
 		),
-		FColor::Green,
-		5.f
+		FColor::Cyan,
+		3.f
 	);
 }
 
 void AAuraVolcanicArcsField::OnArcBeginOverlap(UPrimitiveComponent* OverlappedComponent,AActor* OtherActor,UPrimitiveComponent* OtherComp,int32 OtherBodyIndex,bool bFromSweep,const FHitResult& SweepResult)
 {
-	AuraMagicDebugPrint(
-	   FString::Printf(
-		   TEXT("VOLCANIC FIELD: Overlap event with %s | Component=%s"),
-		   *GetNameSafe(OtherActor),
-		   *GetNameSafe(OtherComp)
-	   ),
-	   FColor::Yellow
-   );
-	
 	ApplyDamageToActor(OtherActor);
 }
 

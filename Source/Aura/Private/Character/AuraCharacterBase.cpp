@@ -151,6 +151,11 @@ void AAuraCharacterBase::InitAbilityActorInfo()
 
 void AAuraCharacterBase::ApplyEffectToSelf(TSubclassOf<UGameplayEffect> GameplayEffectClass, float Level) const
 {
+	if (!HasAuthority())
+	{
+		return;
+	}
+
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
 
 	if (!IsValid(ASC) || !GameplayEffectClass)

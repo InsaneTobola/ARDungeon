@@ -49,6 +49,7 @@ UAuraAttributeSet::UAuraAttributeSet()
 	TagsToAttributes.Add(GameplayTags.Attributes_Secondary_AreaOfEffect, GetAreaOfEffectAttribute);
 	TagsToAttributes.Add(GameplayTags.Attributes_Secondary_Slow, GetSlowAttribute);
 	TagsToAttributes.Add(GameplayTags.Attributes_Secondary_Knockback, GetKnockbackAttribute);
+	TagsToAttributes.Add(GameplayTags.Attributes_Secondary_Knockup, GetKnockupAttribute);
 	TagsToAttributes.Add(GameplayTags.Attributes_Secondary_Speed, GetSpeedAttribute);
 	TagsToAttributes.Add(GameplayTags.Attributes_Secondary_Stun, GetStunAttribute);
 	TagsToAttributes.Add(GameplayTags.Attributes_Secondary_HealthRegeneration, GetHealthRegenerationAttribute);
@@ -87,6 +88,7 @@ void UAuraAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, CriticalHitResistance, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, Slow, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, Knockback, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, Knockup, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, Stun, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, Speed, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, BlockChance, COND_None, REPNOTIFY_Always);
@@ -484,6 +486,11 @@ void UAuraAttributeSet::OnRep_Slow(const FGameplayAttributeData& OldSlow) const
 void UAuraAttributeSet::OnRep_Knockback(const FGameplayAttributeData& OldKnockback) const
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, Knockback, OldKnockback);
+}
+
+void UAuraAttributeSet::OnRep_Knockup(const FGameplayAttributeData& OldKnockup) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, Knockup, OldKnockup);
 }
 
 void UAuraAttributeSet::OnRep_Stun(const FGameplayAttributeData& OldStun) const

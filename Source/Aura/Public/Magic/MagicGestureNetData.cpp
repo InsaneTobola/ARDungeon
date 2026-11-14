@@ -2,6 +2,24 @@
 
 #include "Magic/MagicValidationSettings.h"
 
+namespace
+{
+	bool IsValidStrokeTiming(
+		float StartOffset,
+		float EndOffset,
+		float GestureDuration,
+		float PreviousEndOffset
+	)
+	{
+		return FMath::IsFinite(StartOffset) &&
+			FMath::IsFinite(EndOffset) &&
+			StartOffset >= 0.f &&
+			EndOffset >= StartOffset &&
+			EndOffset <= GestureDuration &&
+			StartOffset >= PreviousEndOffset;
+	}
+}
+
 void FMagicGestureNetData::Reset()
 {
     QuantizedCoordinates.Reset();
@@ -50,6 +68,8 @@ bool FMagicGestureNetData::Encode(
 
     QuantizedCoordinates.Reserve(TotalPointCount * 2);
 
+    float PreviousEndOffset = 0.f;
+
     for (const FMagicStroke& Stroke : SourceGesture.Strokes)
     {
         const int32 PointCount = Stroke.Points.Num();
@@ -65,11 +85,18 @@ bool FMagicGestureNetData::Encode(
         const float StrokeStartOffset = Stroke.StartTime - SourceGesture.StartTime;
         const float StrokeEndOffset = Stroke.EndTime - SourceGesture.StartTime;
 
-        if (!FMath::IsFinite(StrokeStartOffset) || !FMath::IsFinite(StrokeEndOffset))
+        if (!IsValidStrokeTiming(
+            StrokeStartOffset,
+            StrokeEndOffset,
+            Duration,
+            PreviousEndOffset
+        ))
         {
             Reset();
             return false;
         }
+
+        PreviousEndOffset = StrokeEndOffset;
 
         StrokePointCounts.Add(static_cast<uint16>(PointCount));
 
@@ -148,16 +175,24 @@ bool FMagicGestureNetData::Decode(FMagicGesture& OutGesture,const UMagicValidati
     DecodedGesture.EndTime = GestureDurationSeconds;
 
     int32 CoordinateIndex = 0;
+    float PreviousEndOffset = 0.f;
 
     for (int32 StrokeIndex = 0;StrokeIndex < StrokeCount;++StrokeIndex)
     {
         const float StartOffset = StrokeStartOffsets[StrokeIndex];
         const float EndOffset = StrokeEndOffsets[StrokeIndex];
 
-        if (!FMath::IsFinite(StartOffset) || !FMath::IsFinite(EndOffset))
+        if (!IsValidStrokeTiming(
+            StartOffset,
+            EndOffset,
+            GestureDurationSeconds,
+            PreviousEndOffset
+        ))
         {
             return false;
         }
+
+        PreviousEndOffset = EndOffset;
 
         FMagicStroke Stroke;
 

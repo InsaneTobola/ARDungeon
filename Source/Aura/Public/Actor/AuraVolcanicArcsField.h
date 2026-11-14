@@ -52,6 +52,9 @@ private:
     UPROPERTY(EditDefaultsOnly, Category = "Visual")
     TObjectPtr<UMaterialInterface> ArcMaterial;
 
+    UPROPERTY(EditDefaultsOnly, Category = "Collision", meta = (ClampMin = "4", ClampMax = "24"))
+    int32 CollisionSegmentsPerArc = 16;
+
     UPROPERTY(ReplicatedUsing = OnRep_ArcSettings)
     float BaseHalfLengthCm = 250.f;
 
