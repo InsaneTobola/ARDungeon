@@ -50,6 +50,14 @@ AAuraMagicTargetingActor::AAuraMagicTargetingActor()
         AreaMesh->SetStaticMesh(CylinderMesh.Object);
         RangeMesh->SetStaticMesh(CylinderMesh.Object);
     }
+
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
+        TEXT("/Engine/BasicShapes/Cube.Cube"));
+
+    if (CubeMesh.Succeeded())
+    {
+        EarthWallPreviewMesh = CubeMesh.Object;
+    }
 }
 
 void AAuraMagicTargetingActor::BeginPlay()
@@ -83,6 +91,7 @@ void AAuraMagicTargetingActor::InitializeTargeting(APlayerController* InPlayerCo
 
     MaxRangeCm = FMath::Max(InMaxRangeCm, 1.f);
     AreaRadiusCm = FMath::Max(InAreaRadiusCm, 1.f);
+    bEarthWallMode = false;
 
     UpdateMaterials();
     UpdateRangeRing();
@@ -191,7 +200,40 @@ void AAuraMagicTargetingActor::Tick(float DeltaTime)
     }
     
     HideArcPreview();
-    
+
+    if (bEarthWallMode)
+    {
+        const FVector ToTarget =
+            (CurrentTargetLocation - Caster->GetActorLocation()).GetSafeNormal2D();
+        const FVector FacingDirection = ToTarget.IsNearlyZero()
+            ? Caster->GetActorForwardVector().GetSafeNormal2D()
+            : ToTarget;
+
+        // Rotate the wall by 90 degrees so it spans across the caster-to-cursor direction.
+        const FVector WallDirection(-FacingDirection.Y, FacingDirection.X, 0.f);
+        const FRotator WallRotation(0.f, WallDirection.Rotation().Yaw, 0.f);
+
+        AreaMesh->SetVisibility(true);
+        AreaMesh->SetWorldLocation(
+            Hit.Location + FVector(0.f, 0.f, WallPreviewHeightCm * 0.5f + 2.f));
+        AreaMesh->SetWorldRotation(WallRotation);
+        AreaMesh->SetWorldScale3D(FVector(
+            WallPreviewWidthCm / 100.f,
+            WallPreviewThicknessCm / 100.f,
+            WallPreviewHeightCm / 100.f));
+
+        const float Distance2D = FVector::Dist2D(
+            Caster->GetActorLocation(),
+            CurrentTargetLocation);
+
+        const bool bWalkableSurface = Hit.ImpactNormal.Z >= 0.7f;
+        bTargetValid = bWalkableSurface && Distance2D <= MaxRangeCm;
+
+        UpdateMaterials();
+        UpdateRangeRing();
+        return;
+    }
+
     AreaMesh->SetVisibility(true);
     AreaMesh->SetWorldLocation(Hit.Location + Hit.Normal * 3.f);
 
@@ -321,6 +363,7 @@ void AAuraMagicTargetingActor::InitializeVolcanicArcsTargeting(APlayerController
     ArcBowOffsetCm = FMath::Max(InArcBowOffsetCm, 0.f);
     ArcWidthCm = FMath::Max(InArcWidthCm, 1.f);
     bVolcanicArcsMode = true;
+    bEarthWallMode = false;
 
     AreaMesh->SetVisibility(false);
 
@@ -330,6 +373,35 @@ void AAuraMagicTargetingActor::InitializeVolcanicArcsTargeting(APlayerController
     UpdateArcPreview();
 }
 
+
+void AAuraMagicTargetingActor::InitializeEarthWallTargeting(
+    APlayerController* InPlayerController,
+    AActor* InCaster,
+    float InMaxRangeCm,
+    float InWallWidthCm,
+    float InWallHeightCm,
+    float InWallThicknessCm)
+{
+    OwningPlayerController = InPlayerController;
+    Caster = InCaster;
+
+    MaxRangeCm = FMath::Max(InMaxRangeCm, 1.f);
+    WallPreviewWidthCm = FMath::Max(InWallWidthCm, 1.f);
+    WallPreviewHeightCm = FMath::Max(InWallHeightCm, 1.f);
+    WallPreviewThicknessCm = FMath::Max(InWallThicknessCm, 1.f);
+
+    bVolcanicArcsMode = false;
+    bEarthWallMode = true;
+
+    if (EarthWallPreviewMesh)
+    {
+        AreaMesh->SetStaticMesh(EarthWallPreviewMesh);
+    }
+
+    AreaMesh->SetVisibility(false);
+    UpdateMaterials();
+    UpdateRangeRing();
+}
 
 FVector AAuraMagicTargetingActor::GetCasterGroundLocation() const
 {

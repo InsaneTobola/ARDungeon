@@ -4,6 +4,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystem/AuraAbilitySystemComponent.h"
 #include "AbilitySystem/Abilities/AuraAreaSpell.h"
+#include "AbilitySystem/Abilities/AuraEarthWallSpell.h"
 #include "AbilitySystem/Abilities/AuraSelfCastSpell.h"
 #include "AbilitySystem/Abilities/AuraVolcanicArcsSpell.h"
 #include "AbilitySystem/AuraAttributeSet.h"
@@ -22,8 +23,8 @@
 
 #include "Input/AuraInputComponent.h"
 #include "Interaction/EnemyInterface.h"
-#include "Magic/MagicDebug.h"
 
+#include "Magic/MagicDebug.h"
 #include "Magic/UAuraMagicComponent.h"
 #include "Magic/MagicPointCloudRecognizer.h"
 #include "Magic/MagicPatternDefinition.h"
@@ -230,15 +231,17 @@ void AAuraPlayerController::ConfirmMagicDrawingMode()
 		return;
 	}
 
-	// Existing Area Spell flow continues below.
-	const UAuraAreaSpell* SpellDefaults = Cast<UAuraAreaSpell>(Pattern->SkillAbilityClass.GetDefaultObject());
+	// Existing targeted spell flow supports area spells and Earth Wall.
+	const UGameplayAbility* AbilityDefaults = Pattern->SkillAbilityClass.GetDefaultObject();
+	const UAuraAreaSpell* SpellDefaults = Cast<UAuraAreaSpell>(AbilityDefaults);
+	const UAuraEarthWallSpell* EarthWallDefaults = Cast<UAuraEarthWallSpell>(AbilityDefaults);
 
-	if (!SpellDefaults)
+	if (!SpellDefaults && !EarthWallDefaults)
 	{
 		UE_LOG(
 			LogTemp,
 			Error,
-			TEXT("Magic pattern is not assigned to a UAuraAreaSpell.")
+			TEXT("Magic pattern is not assigned to a supported targeted spell ability.")
 		);
 
 		StopMagicDrawingMode();
@@ -268,9 +271,11 @@ void AAuraPlayerController::StartMagicTargeting(UMagicPatternDefinition* Pattern
 		return;
 	}
 
-	const UAuraAreaSpell* SpellDefaults = Cast<UAuraAreaSpell>(Pattern->SkillAbilityClass.GetDefaultObject());
+	const UGameplayAbility* AbilityDefaults = Pattern->SkillAbilityClass.GetDefaultObject();
+	const UAuraAreaSpell* SpellDefaults = Cast<UAuraAreaSpell>(AbilityDefaults);
+	const UAuraEarthWallSpell* EarthWallDefaults = Cast<UAuraEarthWallSpell>(AbilityDefaults);
 
-	if (!SpellDefaults)
+	if (!SpellDefaults && !EarthWallDefaults)
 	{
 		CancelMagicTargeting();
 		return;
@@ -320,17 +325,28 @@ void AAuraPlayerController::StartMagicTargeting(UMagicPatternDefinition* Pattern
 			VolcanicDefaults->GetArcWidthCm()
 			);
 	}
+	else if (EarthWallDefaults)
+	{
+		MagicTargetingActor->InitializeEarthWallTargeting(
+			this,
+			GetPawn(),
+			EarthWallDefaults->GetMaxRangeCm(),
+			EarthWallDefaults->CalculateWallWidthCm(ASC),
+			EarthWallDefaults->GetWallHeightCm(),
+			EarthWallDefaults->GetWallThicknessCm());
+	}
+	else if (SpellDefaults)
+	{
+		MagicTargetingActor->InitializeTargeting(
+			this,
+			GetPawn(),
+			SpellDefaults->GetMaxRangeCm(),
+			SpellDefaults->CalculateAreaRadius(ASC));
+	}
 	else
 	{
-		
-
-		if (!SpellDefaults)
-		{
-			CancelMagicTargeting();
-			return;
-		}
-
-		MagicTargetingActor->InitializeTargeting(this,GetPawn(),SpellDefaults->GetMaxRangeCm(),SpellDefaults->CalculateAreaRadius(ASC));
+		CancelMagicTargeting();
+		return;
 	}
 	
 	SetInputMode(InputModeData);
@@ -653,11 +669,17 @@ void AAuraPlayerController::ServerConfirmMagicTarget_Implementation(FName Patter
 		return;
 	}
 	
-    const UAuraAreaSpell* SpellDefaults = Cast<UAuraAreaSpell>(Pattern->SkillAbilityClass.GetDefaultObject());
+    const UGameplayAbility* AbilityDefaults = Pattern->SkillAbilityClass.GetDefaultObject();
+    const UAuraAreaSpell* SpellDefaults = Cast<UAuraAreaSpell>(AbilityDefaults);
+    const UAuraEarthWallSpell* EarthWallDefaults = Cast<UAuraEarthWallSpell>(AbilityDefaults);
 
-    if (!SpellDefaults || !ASC->FindAbilitySpecFromClass(Pattern->SkillAbilityClass))
+    const float MaxRangeCm = SpellDefaults
+        ? SpellDefaults->GetMaxRangeCm()
+        : (EarthWallDefaults ? EarthWallDefaults->GetMaxRangeCm() : 0.f);
+
+    if (MaxRangeCm <= 0.f || !ASC->FindAbilitySpecFromClass(Pattern->SkillAbilityClass))
     {
-    	AuraMagicDebugPrint(TEXT("SERVER REJECT: Ability spec was not granted or class is invalid."), FColor::Red);
+		AuraMagicDebugPrint(TEXT("SERVER REJECT: Ability spec was not granted or targeted ability class is invalid."), FColor::Red);
         ClientMagicTargetRejected();
         return;
     }
@@ -690,7 +712,7 @@ void AAuraPlayerController::ServerConfirmMagicTarget_Implementation(FName Patter
     const FVector ValidatedLocation = GroundHit.Location;
     const float Distance2D = FVector::Dist2D(AuraCharacter->GetActorLocation(),ValidatedLocation);
 
-    if (Distance2D > SpellDefaults->GetMaxRangeCm())
+    if (Distance2D > MaxRangeCm)
     {
     	AuraMagicDebugPrint(TEXT("SERVER REJECT: Target is outside maximum range."), FColor::Red);
         ClientMagicTargetRejected();
@@ -728,7 +750,7 @@ void AAuraPlayerController::ServerConfirmMagicTarget_Implementation(FName Patter
 void AAuraPlayerController::ClientMagicTargetAccepted_Implementation()
 {
 	AuraMagicDebugPrint(
-	   TEXT("MAGIC CAST SUCCESS: Area field was spawned."),
+	   TEXT("MAGIC CAST SUCCESS: Targeted magic actor was spawned."),
 	   FColor::Green,
 	   5.f
    );
@@ -977,9 +999,6 @@ void AAuraPlayerController::SetupInputComponent()
 
 void AAuraPlayerController::Move(const FInputActionValue& InputActionValue)
 {
-	
-	
-
 	const FVector2D InputAxisVector =InputActionValue.Get<FVector2D>();
 	const FRotator Rotation = GetControlRotation();
 	const FRotator YawRotation(0.f, Rotation.Yaw, 0.f);

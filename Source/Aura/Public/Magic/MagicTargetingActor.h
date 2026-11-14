@@ -29,6 +29,7 @@ public:
 	FVector GetMagicTargetLocation() const;
 
 	void InitializeVolcanicArcsTargeting(APlayerController* InPlayerController,AActor* InCaster,float InMaxRangeCm,float InBaseHalfLengthCm,float InDefaultScale,float InMinScale,float InMaxScale,float InArcBowOffsetCm,float InArcWidthCm);
+	void InitializeEarthWallTargeting(APlayerController* InPlayerController, AActor* InCaster, float InMaxRangeCm, float InWallWidthCm, float InWallHeightCm, float InWallThicknessCm);
 	
 protected:
 	virtual void BeginPlay() override;
@@ -85,6 +86,14 @@ private:
 	TArray<TObjectPtr<USplineMeshComponent>> ArcPreviewSegments;
 
 	bool bVolcanicArcsMode = false;
+	bool bEarthWallMode = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Magic|Earth Wall")
+	TObjectPtr<UStaticMesh> EarthWallPreviewMesh;
+
+	float WallPreviewWidthCm = 100.f;
+	float WallPreviewHeightCm = 180.f;
+	float WallPreviewThicknessCm = 20.f;
 
 	float ArcHalfLengthCm = 250.f;
 
